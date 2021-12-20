@@ -15,6 +15,7 @@
 #include "MAX30105.h"           //MAX3010x library
 #include "heartRate.h"          //Heart rate calculating algorithm
 #include "spo2_algorithm.h"     //SpO2 calculating algorithm
+#include "IERG4230.h"
 
 MAX30105 particleSensor;
 
@@ -24,6 +25,7 @@ byte rateSpot = 0;
 long lastBeat = 0; //Time at which the last beat occurred
 float beatsPerMinute;
 int beatAvg;
+osEvent task1;
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -243,6 +245,8 @@ void setup() {
 //  display.setCursor(0, 10);
 //  display.println("IERG4230 IoT MAX30102"); // Display static text
 //  display.display();
+  osEvent::osTimer = millis();
+  task1.timerSet(100);
   delay(500);
 }
 
@@ -250,6 +254,7 @@ void loop() {
   //ESP.wdtFeed();
   server.handleClient();
   MDNS.update();
+  if (osEvent::osTimer != millis()) timeStampUpdate();
   long irValue = particleSensor.getIR();    //Reading the IR value it will permit us to know if there's a finger on the sensor or not
   
   //Also detecting a heartbeat
@@ -317,34 +322,10 @@ void loop() {
           beatAvg += rates[x];
         beatAvg /= RATE_SIZE;
       }
-      WiFiClient client;
-      if (client.connect(serverUrl, 80)) {
-        Serial.println("connected"); 
-       }else {
-        Serial.println("connection failed");
-        return; 
-       }
-       Serial.print("Request resource: ");
-       Serial.println(resource);
-//       client.print(String("GET ") + resource + apiKey + "&field1=" + 
-//       beatsPerMinute + "&field2=" + beatAvg);
-       client.print(String("GET ") + resource + apiKey + "&field1=" + 
-       beatsPerMinute + "&field2=" + beatAvg + " HTTP/1.1\r\n" + "Host: " + 
-       serverUrl + "\r\n" + "Connection: close\r\n\r\n");
-
-       int timeout = 3 * 10;
-       while (!!!client.available() && (timeout-- > 0)) {
-        delay(100); 
-       }
-
-       if (!client.available()) {
-        Serial.println("No response, going back to sleep"); 
-       }
-       while(client.available()) {
-        Serial.write(client.read());
-       }
-       Serial.println("\nclosing connection");
-       client.stop();
+      Serial.println(task1.isSet());
+      if (task1.isSet()){
+        task01_handler();  
+      }
     }
 
     Serial.print("IR=");
@@ -376,4 +357,50 @@ void loop() {
 //    display.display();
 //    noTone(3);
   }
+}
+
+void task01_handler(){
+  task1.clean();
+  WiFiClient client;
+  if (client.connect(serverUrl, 80)) {
+    Serial.println("connected"); 
+   }else {
+    Serial.println("connection failed");
+    return; 
+   }
+   Serial.print("Request resource: ");
+   Serial.println(resource);
+//       client.print(String("GET ") + resource + apiKey + "&field1=" + 
+//       beatsPerMinute + "&field2=" + beatAvg);
+   client.print(String("GET ") + resource + apiKey + "&field1=" + 
+   beatsPerMinute + "&field2=" + beatAvg + " HTTP/1.1\r\n" + "Host: " + 
+   serverUrl + "\r\n" + "Connection: close\r\n\r\n");
+
+   int timeout = 3 * 10;
+   while (!!!client.available() && (timeout-- > 0)) {
+    delay(100); 
+   }
+
+   if (!client.available()) {
+    Serial.println("No response, going back to sleep"); 
+   }
+   while(client.available()) {
+    Serial.write(client.read());
+   }
+   Serial.println("\nclosing connection");
+   client.stop(); 
+   task1.timerSet(3000); 
+}
+
+void timeStampUpdate(void)   // no need to modify this function unless you know what you are doing.
+{
+  int i;
+  unsigned long temp;
+  temp = millis();
+  if (osEvent::osTimer > temp) i = 1;
+  else i = (int)(temp - osEvent::osTimer);
+  osEvent::osTimer = temp;
+  //---- user add their own tasks if necessary
+  task1.timerUpdate(i);
+   
 }
